@@ -21,9 +21,8 @@ var (
 )
 
 func init() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Erro ao carregar o arquivo .env")
+	if err := godotenv.Load(); err != nil {
+		log.Println("Aviso: .env não encontrado, usando variáveis de ambiente do ambiente de execução")
 	}
 	Token = os.Getenv("DISCORD_TOKEN")
 	if Token == "" {
