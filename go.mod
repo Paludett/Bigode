@@ -1,4 +1,4 @@
-module meu-bot-discord
+module github.com/Paludett/Bot-Discord-Bigode
 
 go 1.22.2
 
