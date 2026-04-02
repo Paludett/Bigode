@@ -1,8 +1,8 @@
 # Bot Discord Bigode
 
-Um bot Discord com suporte a reprodução de música do YouTube e muito mais!
+Um bot do Discord com suporte a reprodução de músicas do YouTube e outras funcionalidades como a exibição de informações do servidor! Esse bot foi criado para meu servidor privado com meus amigos e foi totalmente feito usando a linguagem Go     
 
-## 🚀 Setup
+## Setup
 
 ### Requisitos
 - Go 1.23+
@@ -35,7 +35,7 @@ go build -o bot .
 ./bot
 ```
 
-## 📝 Arquitetura
+## Arquitetura
 
 ```
 bot_discord/
@@ -56,7 +56,7 @@ bot_discord/
     └── voting.go          # Sistema de votação
 ```
 
-## 🎵 Comandos de Música
+## Comandos de Música
 
 ### Reprodução
 - `!play <url ou nome>` / `!tocar <url ou nome>` - Reproduz uma música do YouTube
@@ -65,7 +65,7 @@ bot_discord/
 - `!fila` / `!queue` - Mostra a fila de músicas
 - `!clear` / `!limpar` - Limpa toda a fila (requer votação se houver múltiplos usuários no voice)
 
-### Sistema de Votação 🗳️
+### Sistema de Votação 
 Quando um usuário está sozinho no canal de voz, comandos como `!skip` e `!clear` executam imediatamente. Se houver múltiplos usuários, será aberta uma votação de 30 segundos:
 
 - ✅ para sim
@@ -81,7 +81,7 @@ Bot: Votação iniciada! Reaja com ✅ ou ❌ (30 segundos)
 (Se menos de 50% vota ✅) → Votação rejeitada
 ```
 
-## 🛠️ Outros Comandos
+## Outros Comandos
 
 - `!ping` - Verifica a latência do bot
 - `!oi` / `!ola` - Resposta amigável
@@ -90,7 +90,7 @@ Bot: Votação iniciada! Reaja com ✅ ou ❌ (30 segundos)
 - `!info` - Informações do servidor (nome, criação, membros)
 - `!ajuda` / `!help` - Lista de todos os comandos
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Música não toca
 - Verifique se `ffmpeg` e `yt-dlp` estão instalados
@@ -107,7 +107,3 @@ Bot: Votação iniciada! Reaja com ✅ ou ❌ (30 segundos)
 ### Votação não funciona
 - Verifique se o bot tem permissão para gerenciar reações (Manage Reactions)
 - Verifique se o bot tem a intent `IntentsGuildMessageReactions` ativada
-
-## 📄 Licença
-
-Desenvolvido usando Go por Paludett
