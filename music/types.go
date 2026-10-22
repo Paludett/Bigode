@@ -1,9 +1,10 @@
 package music
 
 import (
+	"context"
 	"sync"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 type Musica struct {
@@ -12,13 +13,26 @@ type Musica struct {
 	User   string
 }
 
+// StreamSession representa a música que está tocando num servidor.
+// Stop encerra o yt-dlp e o ffmpeg e pode ser chamado várias vezes.
 type StreamSession struct {
-	Cancel chan bool
+	cancel context.CancelFunc
+}
+
+func (s *StreamSession) Stop() {
+	s.cancel()
 }
 
 var (
-	FilaMusica        = make(map[string][]*Musica)
+	FilaMusica        = make(map[snowflake.ID][]*Musica)
 	FilaMutex         sync.Mutex
-	VoiceConnections  = make(map[string]*discordgo.VoiceConnection)
-	StreamingSessions = make(map[string]*StreamSession)
+	StreamingSessions = make(map[snowflake.ID]*StreamSession)
 )
+
+// GetStreamingSession retorna a sessão de áudio ativa do servidor, se houver.
+func GetStreamingSession(guildID snowflake.ID) (*StreamSession, bool) {
+	FilaMutex.Lock()
+	defer FilaMutex.Unlock()
+	session, ok := StreamingSessions[guildID]
+	return session, ok
+}

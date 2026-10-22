@@ -2,47 +2,51 @@ package music
 
 import (
 	"fmt"
+	"log"
+	"net/url"
 	"sync"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 // VoteSession armazena uma votação ativa
 type VoteSession struct {
-	GuildID     string             // ID do servidor
-	ChannelID   string             // ID do canal de texto (para enviar mensagens)
-	MessageID   string             // ID da mensagem de votação
-	VoiceUsers  []string           // IDs dos usuários no canal de voz
-	Votes       map[string]bool    // Map de userID -> voto (true = sim, false = não)
-	VoteMutex   sync.Mutex         // Proteção de concorrência
-	Action      string             // "skip" ou "clear"
-	StartTime   time.Time          // Quando a votação começou
-	TimeoutTime time.Duration      // Tempo para votação expirar
-	Session     *discordgo.Session // Session para enviar mensagens
+	GuildID     snowflake.ID          // ID do servidor
+	ChannelID   snowflake.ID          // ID do canal de texto (para enviar mensagens)
+	MessageID   snowflake.ID          // ID da mensagem de votação
+	VoiceUsers  []snowflake.ID        // IDs dos usuários no canal de voz
+	Votes       map[snowflake.ID]bool // Map de userID -> voto (true = sim, false = não)
+	VoteMutex   sync.Mutex            // Proteção de concorrência
+	Action      string                // "skip" ou "clear"
+	StartTime   time.Time             // Quando a votação começou
+	TimeoutTime time.Duration         // Tempo para votação expirar
+	Client      *bot.Client           // Client para enviar mensagens
 }
 
 var (
-	ActiveVotes = make(map[string]*VoteSession) // Map guildID -> VoteSession
-	VoteMutex   sync.Mutex                      // Proteção do mapa
+	ActiveVotes = make(map[snowflake.ID]*VoteSession) // Map guildID -> VoteSession
+	VoteMutex   sync.Mutex                            // Proteção do mapa
 )
 
 // NewVoteSession cria uma nova sessão de votação
-func NewVoteSession(s *discordgo.Session, guildID, channelID string, users []string, action string) *VoteSession {
+func NewVoteSession(c *bot.Client, guildID, channelID snowflake.ID, users []snowflake.ID, action string) *VoteSession {
 	return &VoteSession{
 		GuildID:     guildID,
 		ChannelID:   channelID,
 		VoiceUsers:  users,
-		Votes:       make(map[string]bool),
+		Votes:       make(map[snowflake.ID]bool),
 		Action:      action,
 		StartTime:   time.Now(),
 		TimeoutTime: 30 * time.Second,
-		Session:     s,
+		Client:      c,
 	}
 }
 
 // AddVote adiciona um voto à sessão
-func (v *VoteSession) AddVote(userID string, vote bool) bool {
+func (v *VoteSession) AddVote(userID snowflake.ID, vote bool) bool {
 	v.VoteMutex.Lock()
 	defer v.VoteMutex.Unlock()
 
@@ -94,7 +98,7 @@ func (v *VoteSession) GetResult() (approved bool, yesVotes int, totalVotes int) 
 }
 
 // StartVote inicia uma votação e aguarda respostas
-func StartVote(s *discordgo.Session, guildID, channelID string, users []string, action string) (*VoteSession, bool, int, int) {
+func StartVote(c *bot.Client, guildID, channelID snowflake.ID, users []snowflake.ID, action string) (*VoteSession, bool, int, int) {
 	VoteMutex.Lock()
 
 	// Verifica se já existe votação ativa
@@ -103,7 +107,7 @@ func StartVote(s *discordgo.Session, guildID, channelID string, users []string, 
 		return nil, false, 0, 0 // Já existe votação ativa
 	}
 
-	voteSession := NewVoteSession(s, guildID, channelID, users, action)
+	voteSession := NewVoteSession(c, guildID, channelID, users, action)
 	ActiveVotes[guildID] = voteSession
 	VoteMutex.Unlock()
 
@@ -115,38 +119,35 @@ func StartVote(s *discordgo.Session, guildID, channelID string, users []string, 
 		actionText = "limpar a fila"
 	}
 
-	embed := &discordgo.MessageEmbed{
+	inline := true
+	notInline := false
+	embed := discord.Embed{
 		Title:       "🗳️ Votação em Andamento",
 		Description: fmt.Sprintf("Vote com ✅ para %s ou ❌ para cancelar", actionText),
 		Color:       0xFF9900,
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:   "Ação",
-				Value:  actionText,
-				Inline: true,
-			},
-			{
-				Name:   "Tempo",
-				Value:  "30 segundos",
-				Inline: true,
-			},
+		Fields: []discord.EmbedField{
+			{Name: "Ação", Value: actionText, Inline: &inline},
+			{Name: "Tempo", Value: "30 segundos", Inline: &inline},
 			{
 				Name:   "Votos Necessários",
 				Value:  fmt.Sprintf("%d de %d (50%%)", (len(users)/2)+1, len(users)),
-				Inline: false,
+				Inline: &notInline,
 			},
 		},
-		Footer: &discordgo.MessageEmbedFooter{
-			Text: "Reaja com ✅ ou ❌ para votar",
-		},
+		Footer: &discord.EmbedFooter{Text: "Reaja com ✅ ou ❌ para votar"},
 	}
 
-	msg, err := s.ChannelMessageSendEmbed(channelID, embed)
-	if err == nil {
+	msg, err := c.Rest.CreateMessage(channelID, discord.NewMessageCreate().WithEmbeds(embed))
+	if err != nil {
+		log.Printf("❌ Erro ao enviar mensagem de votação: %v", err)
+	} else {
 		voteSession.MessageID = msg.ID
 		// Adiciona reações automáticas
-		s.MessageReactionAdd(channelID, msg.ID, "✅")
-		s.MessageReactionAdd(channelID, msg.ID, "❌")
+		for _, emoji := range []string{"✅", "❌"} {
+			if err := c.Rest.AddReaction(channelID, msg.ID, url.PathEscape(emoji)); err != nil {
+				log.Printf("❌ Erro ao adicionar reação %s: %v", emoji, err)
+			}
+		}
 	}
 
 	// Aguarda 30 segundos
@@ -163,7 +164,7 @@ func StartVote(s *discordgo.Session, guildID, channelID string, users []string, 
 }
 
 // HandleVoteReaction processa reações de votação
-func HandleVoteReaction(s *discordgo.Session, guildID string, channelID string, messageID string, userID string, emoji string, isAdded bool) {
+func HandleVoteReaction(guildID, userID snowflake.ID, emoji string, isAdded bool) {
 	VoteMutex.Lock()
 	voteSession, exists := ActiveVotes[guildID]
 	VoteMutex.Unlock()

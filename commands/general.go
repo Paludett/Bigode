@@ -7,103 +7,100 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
 )
 
-func Ping(s *discordgo.Session, m *discordgo.MessageCreate) {
-	s.ChannelMessageSend(m.ChannelID, "🏓 Pong!")
+func Ping(m *events.MessageCreate) {
+	send(m, "🏓 Pong!")
 }
 
-func Oi(s *discordgo.Session, m *discordgo.MessageCreate) {
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Olá, %s! 👋", m.Author.Mention()))
+func Oi(m *events.MessageCreate) {
+	send(m, fmt.Sprintf("Olá, %s! 👋", m.Message.Author.Mention()))
 }
 
-func Ajuda(s *discordgo.Session, m *discordgo.MessageCreate) {
-	embed := &discordgo.MessageEmbed{
+func Ajuda(m *events.MessageCreate) {
+	embed := discord.Embed{
 		Title:       "📋 Comandos Disponíveis",
 		Description: "Aqui estão todos os comandos que você pode usar:",
 		Color:       0x9b59b6,
-		Fields: []*discordgo.MessageEmbedField{
+		Fields: []discord.EmbedField{
 			{
 				Name:   "🎵 Música",
 				Value:  "`!play <link/nome>` - Toca música do YouTube\n`!skip` - Pula música atual\n`!stop` - Para a música e limpa fila\n`!fila` - Mostra fila de músicas",
-				Inline: false,
+				Inline: ptr(false),
 			},
 			{
 				Name:   "🎮 Geral",
 				Value:  "`!ping` - Testa latência\n`!oi` - Saudação\n`!info` - Informações do servidor\n`!dado [lados]` - Rola um dado\n`!moeda` - Cara ou coroa",
-				Inline: false,
+				Inline: ptr(false),
 			},
 			{
 				Name:   "⚙️ Admin",
 				Value:  "`!config bemvindo <id_canal>` - Define canal de boas-vindas\n`!config cargo <id_cargo>` - Define cargo automático",
-				Inline: false,
+				Inline: ptr(false),
 			},
 		},
-		Footer: &discordgo.MessageEmbedFooter{
+		Footer: &discord.EmbedFooter{
 			Text: "Bot criado utilizando Go por Paludett",
 		},
 	}
 
-	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+	sendEmbed(m, embed)
 }
 
-func Info(s *discordgo.Session, m *discordgo.MessageCreate) {
-	guild, err := s.Guild(m.GuildID)
-	if err != nil {
-		log.Printf("❌ Erro ao obter informações do servidor: %v", err)
-		s.ChannelMessageSend(m.ChannelID, "❌ Erro ao obter informações do servidor.")
+func Info(m *events.MessageCreate) {
+	if m.GuildID == nil {
 		return
+	}
+	guildID := *m.GuildID
+
+	guild, ok := m.Client().Caches.Guild(guildID)
+	if !ok {
+		log.Printf("❌ Erro ao obter informações do servidor: guild %s fora do cache", guildID)
+		send(m, "❌ Erro ao obter informações do servidor.")
+		return
+	}
+
+	// Número aproximado de membros: usa a contagem da API; cai para o cache
+	membros := guild.MemberCount
+	if rg, err := m.Client().Rest.GetGuild(guildID, true); err == nil && rg.ApproximateMemberCount > 0 {
+		membros = rg.ApproximateMemberCount
+	}
+
+	canais := 0
+	for range m.Client().Caches.ChannelsForGuild(guildID) {
+		canais++
+	}
+	cargos := 0
+	for range m.Client().Caches.Roles(guildID) {
+		cargos++
 	}
 
 	// Obtém data de criação do servidor (a partir do ID)
 	// Discord IDs contêm timestamp
-	createdAt := getDiscordTimestamp(guild.ID)
+	createdAt := guildID.Time()
 
-	embed := &discordgo.MessageEmbed{
+	embed := discord.Embed{
 		Title: "ℹ️ Informações do Servidor",
 		Color: 0x3498db,
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:   "Nome",
-				Value:  guild.Name,
-				Inline: true,
-			},
-			{
-				Name:   "ID",
-				Value:  guild.ID,
-				Inline: true,
-			},
-			{
-				Name:   "Membros",
-				Value:  fmt.Sprintf("%d", guild.ApproximateMemberCount),
-				Inline: true,
-			},
-			{
-				Name:   "Criado em",
-				Value:  createdAt.Format("02/01/2006 15:04"),
-				Inline: true,
-			},
-			{
-				Name:   "Canais de Texto",
-				Value:  fmt.Sprintf("%d", len(guild.Channels)),
-				Inline: true,
-			},
-			{
-				Name:   "Cargos",
-				Value:  fmt.Sprintf("%d", len(guild.Roles)),
-				Inline: true,
-			},
-		},
-		Thumbnail: &discordgo.MessageEmbedThumbnail{
-			URL: guild.IconURL(""),
+		Fields: []discord.EmbedField{
+			{Name: "Nome", Value: guild.Name, Inline: ptr(true)},
+			{Name: "ID", Value: guildID.String(), Inline: ptr(true)},
+			{Name: "Membros", Value: fmt.Sprintf("%d", membros), Inline: ptr(true)},
+			{Name: "Criado em", Value: createdAt.Format("02/01/2006 15:04"), Inline: ptr(true)},
+			{Name: "Canais de Texto", Value: fmt.Sprintf("%d", canais), Inline: ptr(true)},
+			{Name: "Cargos", Value: fmt.Sprintf("%d", cargos), Inline: ptr(true)},
 		},
 	}
+	if icon := guild.IconURL(); icon != nil {
+		embed.Thumbnail = &discord.EmbedResource{URL: *icon}
+	}
 
-	s.ChannelMessageSendEmbed(m.ChannelID, embed)
+	sendEmbed(m, embed)
 }
 
-func Dado(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+func Dado(m *events.MessageCreate, args []string) {
 	rand.Seed(time.Now().UnixNano())
 
 	lados := 6
@@ -114,10 +111,10 @@ func Dado(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	}
 
 	resultado := rand.Intn(lados) + 1
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("🎲 Você rolou um dado de %d lados e tirou: **%d**", lados, resultado))
+	send(m, fmt.Sprintf("🎲 Você rolou um dado de %d lados e tirou: **%d**", lados, resultado))
 }
 
-func Moeda(s *discordgo.Session, m *discordgo.MessageCreate) {
+func Moeda(m *events.MessageCreate) {
 	rand.Seed(time.Now().UnixNano())
 
 	resultado := "Cara"
@@ -127,14 +124,7 @@ func Moeda(s *discordgo.Session, m *discordgo.MessageCreate) {
 		emoji = "👑"
 	}
 
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s A moeda caiu em: **%s**", emoji, resultado))
+	send(m, fmt.Sprintf("%s A moeda caiu em: **%s**", emoji, resultado))
 }
 
-// getDiscordTimestamp extrai o timestamp de um ID Discord
-func getDiscordTimestamp(id string) time.Time {
-	// IDs Discord usam Unix timestamp em milissegundos nos primeiros 42 bits
-	var snowflake int64
-	fmt.Sscanf(id, "%d", &snowflake)
-	timestamp := (snowflake >> 22) + 1420070400000
-	return time.UnixMilli(timestamp)
-}
+func ptr[T any](v T) *T { return &v }
