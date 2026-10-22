@@ -3,19 +3,30 @@ package commands
 import (
 	"strings"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
 )
 
-func Router(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == s.State.User.ID {
+// send envia uma mensagem de texto simples no canal.
+func send(e *events.MessageCreate, content string) {
+	_, _ = e.Client().Rest.CreateMessage(e.ChannelID, discord.NewMessageCreate().WithContent(content))
+}
+
+// sendEmbed envia um embed no canal.
+func sendEmbed(e *events.MessageCreate, embed discord.Embed) {
+	_, _ = e.Client().Rest.CreateMessage(e.ChannelID, discord.NewMessageCreate().WithEmbeds(embed))
+}
+
+func Router(m *events.MessageCreate) {
+	if m.Message.Author.ID == m.Client().ID() || m.Message.Author.Bot {
 		return
 	}
 
-	if !strings.HasPrefix(m.Content, "!") {
+	if !strings.HasPrefix(m.Message.Content, "!") {
 		return
 	}
 
-	content := strings.TrimPrefix(m.Content, "!")
+	content := strings.TrimPrefix(m.Message.Content, "!")
 	args := strings.Fields(content)
 
 	if len(args) == 0 {
@@ -26,30 +37,30 @@ func Router(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	switch comando {
 	case "ping":
-		Ping(s, m)
+		Ping(m)
 	case "oi", "ola":
-		Oi(s, m)
+		Oi(m)
 	case "ajuda", "help":
-		Ajuda(s, m)
+		Ajuda(m)
 	case "info":
-		Info(s, m)
+		Info(m)
 	case "dado":
-		Dado(s, m, args)
+		Dado(m, args)
 	case "moeda":
-		Moeda(s, m)
+		Moeda(m)
 	case "play", "tocar":
-		Play(s, m, args)
+		Play(m, args)
 	case "skip", "pular":
-		Skip(s, m)
+		Skip(m)
 	case "clear", "limpar":
-		Clear(s, m)
+		Clear(m)
 	case "stop", "parar":
-		Stop(s, m)
+		Stop(m)
 	case "fila", "queue":
-		Fila(s, m)
+		Fila(m)
 	case "config":
-		Config(s, m, args)
+		Config(m, args)
 	default:
-		s.ChannelMessageSend(m.ChannelID, "❌ Comando não reconhecido! Use `!ajuda` para ver os comandos disponíveis.")
+		send(m, "❌ Comando não reconhecido! Use `!ajuda` para ver os comandos disponíveis.")
 	}
 }

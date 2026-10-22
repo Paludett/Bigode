@@ -1,42 +1,62 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/snowflake/v2"
 	"github.com/paludett/bot_discord/config"
 	"github.com/paludett/bot_discord/music"
 )
 
-func Ready(s *discordgo.Session, event *discordgo.Ready) {
-	fmt.Printf("✅ Bot conectado como %s#%s\n", event.User.Username, event.User.Discriminator)
-	s.UpdateGameStatus(0, "🎵 !ajuda para ver comandos")
+func Ready(e *events.Ready) {
+	fmt.Printf("✅ Bot conectado como %s\n", e.User.Username)
+	err := e.Client().SetPresence(context.Background(), gateway.WithPlayingActivity("🎵 !ajuda para ver comandos"))
+	if err != nil {
+		log.Printf("❌ Erro ao definir status: %v", err)
+	}
 }
 
-func GuildMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
+func GuildMemberJoin(e *events.GuildMemberJoin) {
+	m := e.Member
+
 	// Mensagem de boas-vindas
 	if config.AppConfig.BemVindoChannelID != "" {
-		embed := &discordgo.MessageEmbed{
-			Title:       "🎉 Bem-vindo(a)!",
-			Description: fmt.Sprintf("Olá %s! Seja bem-vindo(a) ao servidor!\n\nDivirta-se e respeite as regras! 🎮", m.User.Mention()),
-			Color:       0x00ff00,
-			Thumbnail: &discordgo.MessageEmbedThumbnail{
-				URL: m.User.AvatarURL(""),
-			},
-			Footer: &discordgo.MessageEmbedFooter{
-				Text: "Aproveite sua estadia!",
-			},
-			Timestamp: time.Now().Format(time.RFC3339),
+		channelID, err := snowflake.Parse(config.AppConfig.BemVindoChannelID)
+		if err != nil {
+			log.Printf("❌ BEM_VINDO_CHANNEL_ID inválido: %v", err)
+		} else {
+			now := time.Now()
+			embed := discord.Embed{
+				Title:       "🎉 Bem-vindo(a)!",
+				Description: fmt.Sprintf("Olá %s! Seja bem-vindo(a) ao servidor!\n\nDivirta-se e respeite as regras! 🎮", m.User.Mention()),
+				Color:       0x00ff00,
+				Thumbnail:   &discord.EmbedResource{URL: m.EffectiveAvatarURL()},
+				Footer:      &discord.EmbedFooter{Text: "Aproveite sua estadia!"},
+				Timestamp:   &now,
+			}
+			_, err = e.Client().Rest.CreateMessage(channelID, discord.NewMessageCreate().WithEmbeds(embed))
+			if err != nil {
+				log.Printf("❌ Erro ao enviar boas-vindas: %v", err)
+			} else {
+				fmt.Printf("👋 Mensagem de boas-vindas enviada para %s\n", m.User.Username)
+			}
 		}
-		s.ChannelMessageSendEmbed(config.AppConfig.BemVindoChannelID, embed)
-		fmt.Printf("👋 Mensagem de boas-vindas enviada para %s\n", m.User.Username)
 	}
 
 	// Cargo automático
 	if config.AppConfig.CargoAutoID != "" {
-		err := s.GuildMemberRoleAdd(m.GuildID, m.User.ID, config.AppConfig.CargoAutoID)
+		roleID, err := snowflake.Parse(config.AppConfig.CargoAutoID)
+		if err != nil {
+			log.Printf("❌ CARGO_AUTO_ID inválido: %v", err)
+			return
+		}
+		err = e.Client().Rest.AddMemberRole(e.GuildID, m.User.ID, roleID)
 		if err != nil {
 			log.Printf("❌ Erro ao adicionar cargo: %v", err)
 		} else {
@@ -45,18 +65,18 @@ func GuildMemberAdd(s *discordgo.Session, m *discordgo.GuildMemberAdd) {
 	}
 }
 
-func MessageReactionAdd(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
-	if r.UserID == s.State.User.ID {
+func MessageReactionAdd(e *events.GuildMessageReactionAdd) {
+	if e.UserID == e.Client().ID() || e.Emoji.Name == nil {
 		return
 	}
 
-	music.HandleVoteReaction(s, r.GuildID, r.ChannelID, r.MessageID, r.UserID, r.Emoji.Name, true)
+	music.HandleVoteReaction(e.GuildID, e.UserID, *e.Emoji.Name, true)
 }
 
-func MessageReactionRemove(s *discordgo.Session, r *discordgo.MessageReactionRemove) {
-	if r.UserID == s.State.User.ID {
+func MessageReactionRemove(e *events.GuildMessageReactionRemove) {
+	if e.UserID == e.Client().ID() || e.Emoji.Name == nil {
 		return
 	}
 
-	music.HandleVoteReaction(s, r.GuildID, r.ChannelID, r.MessageID, r.UserID, r.Emoji.Name, false)
+	music.HandleVoteReaction(e.GuildID, e.UserID, *e.Emoji.Name, false)
 }

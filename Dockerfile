@@ -1,24 +1,23 @@
-FROM golang:1.23.0-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
-
-# Cache modules
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/bot .
 
-# Build statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -ldflags="-s -w" -o /app/bot .
+FROM alpine:3.22
 
-FROM alpine:3.18
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates ffmpeg python3 nodejs \
+ && wget -qO /usr/local/bin/yt-dlp \
+      https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+ && chmod a+rx /usr/local/bin/yt-dlp \
+ && echo "--js-runtimes node" > /etc/yt-dlp.conf \
+ && adduser -D bigode
 
 WORKDIR /app
 COPY --from=builder /app/bot ./bot
 
-EXPOSE 0
-
+USER bigode
 ENTRYPOINT ["/app/bot"]

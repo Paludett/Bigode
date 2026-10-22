@@ -6,26 +6,28 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
 	"github.com/paludett/bot_discord/config"
 )
 
-func Config(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
+func Config(m *events.MessageCreate, args []string) {
 	// Verifica permissões de administrador
-	perms, err := s.UserChannelPermissions(m.Author.ID, m.ChannelID)
-	if err != nil {
-		log.Printf("❌ Erro ao obter permissões: %v", err)
-		s.ChannelMessageSend(m.ChannelID, "❌ Erro ao verificar permissões!")
+	if m.GuildID == nil || m.Message.Member == nil {
+		send(m, "❌ Erro ao verificar permissões!")
 		return
 	}
+	member := *m.Message.Member
+	member.GuildID = *m.GuildID
+	perms := m.Client().Caches.MemberPermissions(member)
 
-	if perms&discordgo.PermissionAdministrator == 0 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Você precisa ser administrador para usar este comando!")
+	if !perms.Has(discord.PermissionAdministrator) {
+		send(m, "❌ Você precisa ser administrador para usar este comando!")
 		return
 	}
 
 	if len(args) < 3 {
-		s.ChannelMessageSend(m.ChannelID, "❌ Use:\n`!config bemvindo <id_canal>` - Define canal de boas-vindas\n`!config cargo <id_cargo>` - Define cargo automático")
+		send(m, "❌ Use:\n`!config bemvindo <id_canal>` - Define canal de boas-vindas\n`!config cargo <id_cargo>` - Define cargo automático")
 		return
 	}
 
@@ -43,15 +45,15 @@ func Config(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	case "bemvindo", "welcome":
 		envContent = updateEnvLine(envContent, "BEM_VINDO_CHANNEL_ID", id)
 		config.AppConfig.BemVindoChannelID = id
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Canal de boas-vindas definido para: <#%s>", id))
+		send(m, fmt.Sprintf("✅ Canal de boas-vindas definido para: <#%s>", id))
 
 	case "cargo", "role":
 		envContent = updateEnvLine(envContent, "CARGO_AUTO_ID", id)
 		config.AppConfig.CargoAutoID = id
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("✅ Cargo automático definido para: <@&%s>", id))
+		send(m, fmt.Sprintf("✅ Cargo automático definido para: <@&%s>", id))
 
 	default:
-		s.ChannelMessageSend(m.ChannelID, "❌ Tipo inválido! Use `bemvindo` ou `cargo`")
+		send(m, "❌ Tipo inválido! Use `bemvindo` ou `cargo`")
 		return
 	}
 
@@ -59,7 +61,7 @@ func Config(s *discordgo.Session, m *discordgo.MessageCreate, args []string) {
 	err = os.WriteFile(".env", []byte(envContent), 0644)
 	if err != nil {
 		log.Printf("❌ Erro ao salvar .env: %v", err)
-		s.ChannelMessageSend(m.ChannelID, "⚠️ Configuração salva em memória, mas falhou ao atualizar .env")
+		send(m, "⚠️ Configuração salva em memória, mas falhou ao atualizar .env")
 	}
 }
 
